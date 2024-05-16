@@ -1,10 +1,4 @@
-import React, {
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useImperativeHandle, useRef, useState } from "react";
 
 interface Point {
   x: number;
@@ -13,7 +7,8 @@ interface Point {
 }
 
 export const CanvasPainter = React.forwardRef((props, ref) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const displayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [lineWidth, setLineWidth] = useState<number>(50);
   const [drawHistory, setDrawHistory] = useState<Point[][]>([]);
@@ -24,13 +19,11 @@ export const CanvasPainter = React.forwardRef((props, ref) => {
   }));
 
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = maskCanvasRef.current;
     if (canvas) {
       const context = canvas.getContext("2d");
       if (context) {
-        // context.fillStyle = "white";
-        context.fillStyle = "rgba(0, 0, 0, 0)";
-
+        context.fillStyle = "black";
         context.fillRect(0, 0, canvas.width, canvas.height);
       }
     }
@@ -47,53 +40,52 @@ export const CanvasPainter = React.forwardRef((props, ref) => {
   const draw = ({ nativeEvent }: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || !previousPoint) return;
     const { offsetX, offsetY } = nativeEvent;
-    const context = canvasRef.current?.getContext("2d");
-    if (!context) return;
+    const displayContext = displayCanvasRef.current?.getContext("2d");
+    const maskContext = maskCanvasRef.current?.getContext("2d");
+    if (!displayContext || !maskContext) return;
 
     const newPoint: Point = { x: offsetX, y: offsetY, lineWidth };
-    drawBrush(context, previousPoint, newPoint);
+    drawBrush(
+      displayContext,
+      previousPoint,
+      newPoint,
+      "rgb(190 24 93)",
+    );
+    drawBrush(maskContext, previousPoint, newPoint, "white");
     setPreviousPoint(newPoint);
   };
 
   const drawBrush = (
     context: CanvasRenderingContext2D,
     startPoint: Point,
-    endPoint: Point
+    endPoint: Point,
+    color: string,
   ) => {
     const distance = Math.sqrt(
       Math.pow(endPoint.x - startPoint.x, 2) +
-        Math.pow(endPoint.y - startPoint.y, 2)
+        Math.pow(endPoint.y - startPoint.y, 2),
     );
     const angle = Math.atan2(
       endPoint.y - startPoint.y,
-      endPoint.x - startPoint.x
+      endPoint.x - startPoint.x,
     );
 
     for (let i = 0; i < distance; i += lineWidth / 10) {
-      // Adjust the step size for smoother strokes
       const x = startPoint.x + Math.cos(angle) * i;
       const y = startPoint.y + Math.sin(angle) * i;
 
-      drawCircle(context, x, y, lineWidth);
+      drawCircle(context, x, y, lineWidth, color);
     }
   };
-
-  CanvasPainter.displayName = "CanvasPainter";
 
   const drawCircle = (
     context: CanvasRenderingContext2D,
     x: number,
     y: number,
-    lineWidth: number
+    lineWidth: number,
+    color: string,
   ) => {
-    // const gradient = context.createRadialGradient(x, y, 0, x, y, lineWidth / 2);
-    // gradient.addColorStop(0, "rgba(0, 0, 0, 1)");
-    // gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
-
-    context.strokeStyle = "white";
-    context.fillStyle = "white";
-
-    // context.fillStyle = gradient;
+    context.fillStyle = color;
     context.beginPath();
     context.arc(x, y, lineWidth / 2, 0, Math.PI * 2);
     context.fill();
@@ -112,21 +104,28 @@ export const CanvasPainter = React.forwardRef((props, ref) => {
   };
 
   const exportMaskAsDataURL = (): string => {
-    const canvas = canvasRef.current;
+    const canvas = maskCanvasRef.current;
     return canvas ? canvas.toDataURL() : "";
   };
 
   return (
     <div>
       <canvas
-        ref={canvasRef}
+        ref={displayCanvasRef}
         width={512}
         height={512}
         onMouseDown={startDrawing}
         onMouseMove={draw}
         onMouseUp={stopDrawing}
         onMouseLeave={stopDrawing}
-      />
+        className="opacity-60"
+        />
+      <canvas
+        ref={maskCanvasRef}
+        width={512}
+        height={512}
+        className="hidden"
+        />
       <div className="space-x-4">
         <input
           type="range"
@@ -139,3 +138,5 @@ export const CanvasPainter = React.forwardRef((props, ref) => {
     </div>
   );
 });
+
+CanvasPainter.displayName = "CanvasPainter";
