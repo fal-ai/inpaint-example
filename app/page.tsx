@@ -1,676 +1,143 @@
-'use client'
+"use client";
 
-import { useState, useRef, useEffect } from 'react'
-import { Textarea } from '@/components/ui/textarea'
-import { Combobox } from '@/components/combobox'
-import { Button } from '@/components/ui/button'
-import { Loader2, RefreshCw } from 'lucide-react'
-import { getRandomIdeas, imageDesigns } from '../prompts'
-import { Switch } from '@/components/ui/switch'
-import { Toaster } from '@/components/ui/sonner'
-import { toast } from 'sonner'
-import { v4 as uuid } from 'uuid'
-import * as fal from '@fal-ai/serverless-client'
+import { useState, useRef, useEffect } from "react";
+import { Textarea } from "@/components/ui/textarea";
+import { Combobox } from "@/components/combobox";
+import { Button } from "@/components/ui/button";
+import { Loader2, RefreshCw } from "lucide-react";
+import { getRandomIdeas, imageDesigns } from "../prompts";
+import { Switch } from "@/components/ui/switch";
+import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
+import { v4 as uuid } from "uuid";
+import * as fal from "@fal-ai/serverless-client";
+import { CanvasPainter } from "@/components/canvas";
+import { Input } from "@/components/ui/input";
 
-const seed = Math.floor(Math.random() * 100000)
-const baseArgs = {
-  sync_mode: true,
-  strength: .99,
-  seed
-}
+const seed = Math.floor(Math.random() * 100000);
 
 fal.config({
-  proxyUrl: '/api/proxy',
-})
+  proxyUrl: "/api/proxy",
+});
 
-const models = [
-  {
-    value: 'stable-cascade',
-    label: 'Stable Cascade',
-  },
-  {
-    value: 'stable-diffusion',
-    label: 'Stable Diffusion',
-  },
-  {
-    value: 'stable-video-diffusion',
-    label: 'Stable Video Diffusion'
-  },
-  {
-    value: 'fooocus',
-    label: 'Fooocus',
-  },
-  {
-    value: 'face-adapter',
-    label: 'Face Adapter'
-  },
-  {
-    value: 'remove-background',
-    label: 'Remove Background'
-  },
-  {
-    value: 'illusion-diffusion',
-    label: 'Illusion Diffusion'
-  },
-  {
-    value: 'animate',
-    label: 'Animate',
-  },
-  {
-    value: 'fast-animate',
-    label: 'Fast Animate'
-  },
-  {
-    value: 'real-time',
-    label: 'Real Time',
-  }
-]
+const INITIAL_PROMPT = "a cat";
 
 export default function Home() {
-  const [input, setInput] = useState('')
-  const [updating, setUpdating] = useState<string | null>(null)
-  const [results, setResults] = useState<any[]>([])
-  const [isClient, setIsClient] = useState<boolean>(false)
-  const [showIdeas, setShowIdeas] = useState(true)
-  const [ideas, setIdeas] = useState<any>(getRandomIdeas())
-  const [file, setFile] = useState<any>(null)
-  const [imageIndex, setImageIndex] = useState<any>(null)
-  const [excalidrawImage, setExcalidrawImage] = useState<any>(null)
-  const [sceneData, setSceneData] = useState<any>(null)
-  const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null)
-  const [_appState, setAppState] = useState<any>(null)
-  const scrollRef = useRef<any>(null)
-  const fileRef = useRef<any>(null)
-  const [excalidrawExportFns, setexcalidrawExportFns] = useState<any>(null)
-  const [Comp, setComp] = useState<any>(null);
-  useEffect(() => {
-    import('@excalidraw/excalidraw').then((comp) => setComp(comp.Excalidraw))
-  }, [])
+  const [prompt, setPrompt] = useState<string>(INITIAL_PROMPT);
+  const [loading, setLoading] = useState(false);
+  const canvasPainterRef = useRef<any>(null);
+  const [output, setOutput] = useState<any>(null);
 
-  useEffect(() => {
-    import('@excalidraw/excalidraw').then((module) =>
-      setexcalidrawExportFns({
-        exportToBlob: module.exportToBlob,
-        serializeAsJSON: module.serializeAsJSON
-      })
-    );
-  }, []);
-
-  useEffect(() => { setIsClient(true) }, [])
-
-  const [model, setModel] = useState({
-    value: 'stable-cascade',
-    label: 'Stable Cascade'
-  })
-
-  const requiresImage = model.value === 'face-adapter'
-  || model.value === 'remove-background'
-  || model.value === 'illusion-diffusion'
-  || model.value === 'stable-video-diffusion'
-
-  const requiresInput = model.value !== 'remove-background' && model.value !== 'stable-video-diffusion'
-  const showImages = model.value === 'illusion-diffusion'
-  const isRealTime = model.value === 'real-time'
-
-  const { send } = fal.realtime.connect('110602490-sdxl-turbo-realtime', {
-    connectionKey: 'realtime-nextjs-app',
-    onResult(result) {
-      if (result.error) return
-      setExcalidrawImage(result.images[0].url)
-    }
-  })
-
-  async function getDataUrl(appState = _appState) {
-    const elements = excalidrawAPI.getSceneElements()
-    if (!elements || !elements.length) return
-    const blob = await excalidrawExportFns.exportToBlob({
-      elements,
-      exportPadding: 0,
-      appState,
-      quality: 0.5,
-      files: excalidrawAPI.getFiles(),
-      getDimensions: () => { return {width: 450, height: 450}}
-    })
-    return await new Promise(r => {let a=new FileReader(); a.onload=r; a.readAsDataURL(blob)}).then((e:any) => e.target.result)
-  }
-  
-  function onSwitchChange() {
-    setShowIdeas(!showIdeas)
-    scroll()
-  }
-
-  async function onChangeFile(e) {
-    const file = fileRef.current.files[0]
-    if (!file) return
-    setFile(file)
-    setImageIndex(null)
-    e.target.value = null
-    scroll()
-  }
-
-  function scroll() {
-    setTimeout(() => {
-      scrollRef.current.scrollIntoView({
-        behavior: 'smooth'
-      })
-    }, 100)
-  }
-
-  async function generate(_input = input) {
-    if (!_input && requiresInput) return toast('Please set a prompt.')
-    if (requiresImage && (!file && imageIndex === null)) {
-      return toast('Please choose a picture.')
-    }
-    const _model = model
-    let _file = file
-    setFile(null)
-    setInput('')
-    setUpdating('Generating ...')
-    scroll()
-    let imageUrl = _file
-    if (requiresImage) {
-      if (imageIndex !== null) {
-        imageUrl = imageDesigns[imageIndex]
-        setImageIndex(null)
-      }
-    }
-    try {
-      const params = fetchModelParams(_model.value, _input, imageUrl)
-      console.log('params: ', params)
-      if (params.type === 'subscribe') {
-        const result:any = await fal.subscribe(params.model_name, {
-          ...params.inputs as any,
-          logs: true,
-          onQueueUpdate: (update) => {
-            if (update.status === 'IN_PROGRESS' && update.logs?.length) {
-              console.log('update:', update)
-              setUpdating(update.logs[update.logs.length - 1].message)
-            }
+  async function generateImage() {
+    setLoading(true);
+    const maskUrl = canvasPainterRef.current.exportMaskAsDataURL();
+    const result = await fal.subscribe("fal-ai/fooocus/inpaint", {
+      input: {
+        prompt: "a cat realistic, highly detailed, 8k",
+        negative_prompt:
+          "(worst quality, low quality, normal quality, lowres, low details, oversaturated, undersaturated, overexposed, underexposed, grayscale, bw, bad photo, bad photography, bad art:1.4), (watermark, signature, text font, username, error, logo, words, letters, digits, autograph, trademark, name:1.2), (blur, blurry, grainy), morbid, ugly, asymmetrical, mutated malformed, mutilated, poorly lit, bad shadow, draft, cropped, out of frame, cut off, censored, jpeg artifacts, out of focus, glitch, duplicate, (airbrushed, cartoon, anime, semi-realistic, cgi, render, blender, digital art, manga, amateur:1.3), (3D ,3D Game, 3D Game Scene, 3D Character:1.1), (bad hands, bad anatomy, bad body, bad face, bad teeth, bad arms, bad legs, deformities:1.3)",
+        styles: ["Fooocus Sharp", "Fooocus Enhance", "Fooocus V2"],
+        performance: "Extreme Speed",
+        guidance_scale: 4,
+        sharpness: 2,
+        aspect_ratio: "512x512",
+        num_images: 1,
+        loras: [
+          {
+            path: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_offset_example-lora_1.0.safetensors",
+            scale: 0.1,
           },
-        }) as any
-        if (result.image) {
-          let responseContext = 'Background removed.'
-          if (_model.value === 'stable-video-diffusion') {
-            responseContext = 'Video generated.'
-          }
-          if (_model.value === 'face-adapter') {
-            responseContext = 'Face adapter.'
-          }
-          setResults([...results, {
-            type: 'image',
-            url: result.image.url,
-            prompt: responseContext
-          }])
-        }
-        if (result.images) {
-          console.log('result: ', result)
-          setResults([...results, {
-            type: 'image',
-            url: result.images[0].url,
-            prompt: _input
-          }])
-        }
-        if (result.video) {
-          console.log('result: ', result)
-          setResults([...results, {
-            type: 'video',
-            url: result.video.url,
-            prompt: _input
-          }])
-        }
-        setUpdating(null)
-        console.log('result: ', result)
-        setIdeas(getRandomIdeas())
-        scroll()
-      } else {
-
-      }
-    } catch (err) {
-      console.log('err : ', err)
+        ],
+        refiner_model: "None",
+        refiner_switch: 0.8,
+        output_format: "jpeg",
+        seed: 176400,
+        inpaint_image_url:
+          "https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png",
+        mask_image_url: maskUrl,
+        inpaint_mode: "Inpaint or Outpaint (default)",
+        outpaint_selections: [],
+        inpaint_engine: "v2.6",
+        inpaint_strength: 1,
+        inpaint_respective_field: 0.618,
+        image_prompt_1: {
+          type: "ImagePrompt",
+          stop_at: 0.5,
+          weight: 1,
+        },
+        image_prompt_2: {
+          type: "ImagePrompt",
+          stop_at: 0.5,
+          weight: 1,
+        },
+        image_prompt_3: {
+          type: "ImagePrompt",
+          stop_at: 0.5,
+          weight: 1,
+        },
+        image_prompt_4: {
+          type: "ImagePrompt",
+          stop_at: 0.5,
+          weight: 1,
+        },
+        enable_safety_checker: true,
+      },
+      logs: true,
+    });
+    console.log(result);
+    if (result) {
+      setOutput(result.images[0].url);
     }
+    setLoading(false);
   }
 
   return (
-    <main className='
-    p-4 pt-0 md:p-12 md:pt-0 flex-col'>
-      <div className='
-      py-6 flex'>
-        <a href='https://fal.ai/models' target='_blank'>
-          <div className='
-          p-1 px-3 rounded
-          bg-secondary'>
-            <p
-              className='text-sm'
-            >⚡️ &nbsp;&nbsp;Check out more models at <span className='font-semibold' >Fal.ai</span>. -&gt;</p>
-          </div>
-        </a>
-      </div>
-      <div className='
-      flex rounded-lg border flex-1
-      px-3 md:px-6 py-3 flex-col
-      '>
-        <div className='
-        flex-col md:flex-row
-        flex flex-1'>
-          <div className='
-          items-center
-          flex flex-1'>
-            <p
-            className='
-            text-sm
-            md:text-lg font-medium'>Playground</p>
-            <Switch
-              className='ml-5'
-              checked={showIdeas}
-              onCheckedChange={onSwitchChange}
-            />
-            <p className='
-            text-xs md:text-base
-            ml-2'>{showIdeas ? 'Hide ideas': 'Show ideas'}</p>
-          </div>
-          <div className='mt-3 md:mt-0'>
-            <Combobox
-              models={models}
-              setModel={setModel}
-              setInput={setInput}
-              model={model}
-              scroll={scroll}
+    <main
+      className="
+    p-4 pt-0 md:p-12 md:pt-0 flex-col"
+    >
+      <div className="mt-20">
+        <h1 className="text-4xl font-bold">FAL AI INPAINT EXAMPLE</h1>
+        <div>
+          <div className="flex flex-row space-x-2">
+            <Button
+              disabled={loading}
+              type="submit"
+              onClick={() => generateImage()}
+            >
+              {loading ? "Generating.." : "Generate"}
+            </Button>
+            <Input
+              type="text"
+              placeholder="Imagine.."
+              className="text-sm lg:text-md flex rounded-lg lg:h-12 w-full bg-black/5 dark:bg-white/5"
+              onKeyDown={(e) => {
+                if (loading) return;
+                if (e.key === "Enter") {
+                  generateImage();
+                }
+              }}
+              value={prompt ?? ""}
+              onChange={(e: any) => {
+                setPrompt(e.target.value);
+              }}
             />
           </div>
         </div>
-        <div className={`
-        ${isRealTime ? 
-        'h-[calc(100vh-180px)]' :
-        'h-[calc(100vh-380px)] md:h-[calc(100vh-330px)] '}
-        flex flex-col overflow-y overflow-scroll`}>
-          {
-            results.map((result) => (
-              <div className='
-              md:w-[400px]
-              ' key={result.url}>
-                {
-                 (result.type === 'image') ? (
-                  <a
-                    href={result.url}
-                    target='_blank'
-                  >
-                    <img
-                      src={result.url}
-                      width={400}
-                      height={400}
-                      className='
-                      border-l border-r border-t
-                      mt-3 rounded-t'
-                      alt='Fal image'
-                    />
-                  </a>
-                ) : (result.type === 'video') ? (
-                  <a
-                    href={result.url}
-                    target='_blank'
-                  >
-                    <video
-                      loop
-                      src={result.url}
-                      width={400}
-                      height={400}
-                      className='mt-3'
-                      controls
-                    />
-                  </a>
-                ) : null  
-                }
-                <p className='rounded-b border-l border-b border-r text-xs p-2'>{result.prompt}</p>
-              </div>
-            ))
-          }
-          {
-            requiresImage && file && <img className='mt-3' width={300} height={300} src={URL.createObjectURL(file)} />
-          }
-          {
-            requiresImage && imageIndex !== null && <img className='mt-3' width={300} height={300} src={imageDesigns[imageIndex]} />
-          }
-                    {
-            isRealTime && isClient && (
-                <div className='
-                flex flex-col
-                lg:flex-row
-                mt-2'>
-                  <div className="
-                  w-[380px] h-[380px]
-                  md:w-[550px] md:h-[570px] md:mr-3">
-                    {
-                      isClient && excalidrawExportFns && (
-                        <Comp
-                          excalidrawAPI={(api)=> setExcalidrawAPI({
-                            ...api,
-                            scrollToContent: {fitToContent: false}
-                          })}
-                          onChange={async (elements, appState) => {
-                            const newSceneData = excalidrawExportFns.serializeAsJSON(
-                              elements,
-                              appState,
-                              excalidrawAPI.getFiles(),
-                              'local'
-                            )
-                            if (newSceneData !== sceneData) {
-                              setAppState(appState)
-                              setSceneData(newSceneData)
-                              let dataUrl = await getDataUrl(appState)
-                              send({
-                                ...baseArgs,
-                                image_url: dataUrl,
-                                prompt: input,
-                              })
-                            }
-                          }}
-                        />
-                      )
-                    }
-                  </div>
-                  {
-                    excalidrawImage && (
-                      <img
-                        src={excalidrawImage}
-                        className='
-                        mt-2 lg:mt-0
-                        w-[400px] h-[400px]
-                        '
-                        alt='fal image'
-                      />
-                    )
-                  }
-                </div>
-            )
-          }
-          {
-            updating && (
-              <div className='flex items-center my-5'>
-                <Loader2 className='h-6 w-6 animate-spin' />
-                <p className='ml-3 text-sm'>
-                  {updating.includes('%') ? updating : 'Generating ...'}
-                  </p>
-              </div>
-            )
-          }
-          {
-            !isRealTime && requiresInput && showIdeas && isClient && !updating && (
-              <div className=' flex-col flex flex-1 justify-end mt-3'>
-                <div className='
-                
-                flex-col md:flex-row
-                flex items-center'>
-                  {
-                    ideas.map((item, index) => {
-                      return (
-                        <div
-                          onClick={
-                            () => {
-                              setInput(item)
-                              generate(item)
-                            }
-                          }
-                          key={index}
-                          className='
-                          w-full md:w-[400px]
-                          p-3 md:p-4 
-                          mb-1 md:mb-0
-                          md:h-[74px]
-                          overflow-y-scroll
-                          hover:bg-secondary
-                          cursor-pointer rounded
-                          border
-                          md:mr-2'>
-                          <p className='text-sm'>{item}</p>
-                        </div>
-                      )
-                    })
-                  }
-                  <Button
-                  variant='ghost'
-                  onClick={(e) => {
-                    setIdeas(getRandomIdeas())
-                  }}
-                  className='
-                  mt-1 md:mt-0
-                  p-[10px]
-                  rounded-full'>
-                    <RefreshCw
-                      className='w-5 h-5'
-                    />
-                  </Button>
-                </div>
-              </div>
-            )
-          }
-          {
-            Boolean(showImages) && !updating && (
-              <div className='flex flex-wrap mt-2'>
-                {
-                  imageDesigns.map((image, index) => (
-                    <div
-                    key={index}
-                    onClick={() => {
-                      setImageIndex(index)
-                      setFile(null)
-                    }}
-                    className='cursor-pointer mr-2'>
-                      <img
-                        className='rounded'
-                        src={image}
-                        width={60}
-                        height={60}
-                      />
-                    </div>
-                  ))
-                }
-              </div>
-            )
-          }
-          <div ref={scrollRef} />
+        <div className="text-lg flex gap-10 mt-20">
+          <div>
+            <div className="absolute">
+              <CanvasPainter ref={canvasPainterRef}></CanvasPainter>
+            </div>
+            <img src="https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png" />
+          </div>
+          <div>
+            <div className="h-[512px] w-[512px] bg-indigo-512 border-solid border-indigo-600 border-2">
+              {output && <img src={output} />}
+            </div>
+          </div>
         </div>
       </div>
-      <div className='
-      flex-col md:flex-row
-      mt-2 flex'>
-        {
-          requiresInput && (
-            <Textarea
-              onChange={e => setInput(e.target.value)}
-              placeholder='Prompt'
-              value={input}
-              className='
-              w-full md:w-[500px]
-              px-3'
-            />
-          )
-        }
-        {
-          isRealTime && showIdeas && (
-            <div
-              onClick={() => setInput(ideas[0])}
-              key={ideas[0]}
-              className='
-              m-0 mt-2 p-4 w-full
-              md:mr-2 md:ml-3 md:my-5 md:w-[400px]
-              h-[74px]
-              overflow-scroll
-              hover:bg-secondary
-              cursor-pointer rounded
-              border flex flex-1'>
-              <p className='
-              flex flex-1 
-              text-sm'>{ideas[0]}</p>
-              <Button
-                variant='ghost'
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIdeas(getRandomIdeas())
-                }}
-                className='
-                hover:bg-background
-                ml-2 p-[10px]
-                rounded-full'>
-                  <RefreshCw className='w-5 h-5' />
-                </Button>
-            </div>
-          )
-        }
-        {
-         requiresImage && (
-          <Button
-            onClick={() => fileRef.current.click()}
-            className='
-            w-full md:w-[200px] md:ml-2
-            text-secondary'>
-            <div className='flex items-center'>
-              <p>Choose image</p>
-            </div>
-          </Button>
-         )
-        }
-       {
-        !isRealTime && (
-          <Button
-            onClick={() => generate()}
-            className='
-            ml-0 md:ml-2
-            w-full md:w-[200px]
-            mt-2 md:mt-0
-            hover:bg-[#4d3ec3]
-            text-white bg-[#5a4bd1]'>
-            { updating ? 
-            <div className='flex items-center'>
-              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-              <p>Generating ...</p>
-            </div>
-            : 'Generate' }
-          </Button>
-        )
-       }
-      </div>
-      <Toaster />
-      {
-        isClient && (
-          <input
-            onChange={onChangeFile}
-            ref={fileRef}
-            accept="image/*"
-            type='file'
-            className='hidden'
-          />
-        )
-      }
     </main>
-  )
-}
-
-function fetchModelParams(model: string, input:string, url?: string) {
-  switch (model) {
-    case 'stable-cascade':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/stable-cascade',
-        inputs: {
-          input: {
-            prompt: input
-          }
-        }
-      }
-    case 'stable-video-diffusion':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/fast-svd',
-        inputs: {
-          input: {
-            image_url: url
-          }
-        }
-      }
-    case 'stable-diffusion':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/fast-sdxl',
-        inputs: {
-          input: {
-            prompt: input
-          }
-        }
-      }
-    case 'real-time':
-      return {
-        type: 'real-time',
-        model_name: '110602490-lcm-sd15-i2i',
-        inputs: {
-          input: {
-            prompt: input
-          }
-        }
-      }
-    case 'fooocus':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/fooocus',
-        inputs: {
-          input: {
-            prompt: input
-          }
-        }
-      }
-    case 'animate':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/animatediff',
-        inputs: {
-          input: {
-            prompt: input
-          }
-        }
-      }
-    case 'fast-animate':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/animatediff-lcm',
-        inputs: {
-          input: {
-            prompt: input
-          }
-        }
-      }
-    case 'face-adapter':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/ip-adapter-face-id',
-        inputs: {
-          input: {
-            face_image_url: url,
-            prompt: input
-          }
-        }
-      }
-    case 'remove-background':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/imageutils',
-        inputs: {
-          path: '/rembg',
-          input: {
-            image_url: url,
-          }
-        }
-      }
-    case 'illusion-diffusion':
-      return {
-        type: 'subscribe',
-        model_name: 'fal-ai/illusion-diffusion',
-        inputs: {
-          input: {
-            image_url: url,
-            prompt: input
-          }
-        }
-      }
-    default:
-      return {}
-  }
+  );
 }
